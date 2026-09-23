@@ -1,0 +1,6 @@
+strategy,n_trades,time_in_market_%,total_return_%,cagr_%,max_drawdown_%
+"events, hold 1d",101,2.166,7.895,0.4,-17.435
+"events, hold 3d",101,6.497,41.457,1.841,-17.489
+"events, hold 5d",101,10.828,42.026,1.862,-31.297
+"events, hold 10d",101,21.655,91.126,3.465,-45.983
+buy and hold NIFTY,1,100.0,415.745,9.01,-59.856
