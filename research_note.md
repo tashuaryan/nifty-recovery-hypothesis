@@ -33,6 +33,14 @@ on the difference in means:
 - Differences are positive at every horizon, but no 95% interval excludes
   zero (p = 0.115 to 0.298). Win rates are close to baseline
   (10d: 57.4% vs 56.3%).
+- Volatility: event-window returns are about 50% more dispersed than
+  normal days (std 2.6%, 3.9%, 4.3%, 6.1% vs 1.6%, 2.4%, 2.9%, 4.0% for
+  1, 3, 5, 10 days). Falls cluster in turbulent markets, so the higher
+  average comes with a much wider range of outcomes.
+Why these statistics: the mean and median show the size and typical
+outcome, the win rate shows consistency, the standard deviation shows
+risk, and the bootstrap gives a confidence interval without assuming
+normal returns.
 Conclusion: suggestive, not statistically significant with 101 events.
 
 ## Backtest (net of costs)

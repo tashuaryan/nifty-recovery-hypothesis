@@ -1,6 +1,6 @@
 """
 Statistical evidence: are returns after big falls different from normal days?
-For each holding period: mean, median, win rate, and a bootstrap test of
+For each holding period: mean, median, std, win rate, and a bootstrap test of
 (event mean - baseline mean).
 """
 
@@ -57,8 +57,10 @@ def run_stats():
             "n_events": len(ev),
             "event_mean_%": ev.mean() * 100,
             "event_median_%": np.median(ev) * 100,
+            "event_std_%": ev.std(ddof=1) * 100,
             "event_win_rate_%": (ev > 0).mean() * 100,
             "baseline_mean_%": base.mean() * 100,
+            "baseline_std_%": base.std(ddof=1) * 100,
             "baseline_win_rate_%": (base > 0).mean() * 100,
             "diff_mean_%": (ev.mean() - base.mean()) * 100,
             "diff_CI95_low_%": lo * 100,
