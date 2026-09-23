@@ -1,108 +1,168 @@
-# Do NIFTY 50 returns recover after significant one-day falls?
+"""
+Event-driven backtest: buy next day's open after a qualifying fall, sell at
+the close N trading days after the event day. One position at a time.
+Reports trade statistics (in-sample / out-of-sample) and a daily
+mark-to-market equity curve with max drawdown, vs buy-and-hold.
+Cash earns 0% while flat.
+"""
 
-## Hypothesis
-After a large one-day fall in the NIFTY 50, forward returns over the next
-few days to weeks are higher than on normal days.
+import os
+import numpy as np
+import pandas as pd
 
-## Data
-NIFTY 50 (^NSEI) daily OHLC from Yahoo Finance via yfinance, 2007-09-18 to
-2026-09-23 (4,664 rows). Validated: no duplicates, correctly ordered, no
-missing values, no invalid OHLC or non-positive prices.
+from config import HOLDING_PERIODS, OOS_SPLIT_DATE, ENTRY_COST_BPS, EXIT_COST_BPS
+from events import load_clean_data
 
-## Event and Recovery Definitions
-Event: close-to-close return <= -2%. 200 days qualified; 101 remained
-after skipping events that overlap the holding window of an earlier event
-(no double counting). Recovery: cumulative return from entry to the close
-N trading days later, for N = 1, 3, 5, 10 (and 20 in robustness).
+EVENTS_PATH = "outputs/results/events.csv"
+OUT_PATH = "outputs/results/backtest_summary.csv"
+EQUITY_SUMMARY_PATH = "outputs/results/backtest_equity_summary.csv"
+CURVE_PATH = "outputs/results/equity_curve_{n}d.csv"
+FIG_PATH = "outputs/figures/equity_curves.png"
 
-## Entry / Exit, Holding Period, Test Period
-Entry: next trading day's open (the fall is only known at the close, so
-this avoids look-ahead bias). Exit: close N days after the event day.
-Full sample 2007-09-18 to 2026-09-23. In-sample: before 2021-01-01
-(84 events). Out-of-sample: 2021-01-01 onwards (17 events).
+ENTRY_COST = ENTRY_COST_BPS / 10000
+EXIT_COST = EXIT_COST_BPS / 10000
 
-## Transaction Costs
-10 bps per side (20 bps round trip), an assumed approximation of brokerage
-and market impact, not exchange-specific fee data.
 
-## Statistical Evidence
-Event forward returns vs all non-event days, bootstrap (10,000 resamples)
-on the difference in means:
-- Mean event return: +0.26% (1d), +0.58% (3d), +0.83% (5d), +1.14% (10d)
-- Baseline: -0.00%, +0.08%, +0.15%, +0.35%
-- Differences are positive at every horizon, but no 95% interval excludes
-  zero (p = 0.115 to 0.298). Win rates are close to baseline
-  (10d: 57.4% vs 56.3%).
-Conclusion: suggestive, not statistically significant with 101 events.
+def run_trades(prices, event_dates, n):
+    """One trade per event, sequential (skip if entry is before previous exit)."""
+    trades, last_exit_i = [], -1
+    for d in sorted(event_dates):
+        if d not in prices.index:
+            continue
+        i = prices.index.get_loc(d)
+        entry_i, exit_i = i + 1, i + n
+        if exit_i >= len(prices) or entry_i <= last_exit_i:
+            continue
+        gross = prices["Close"].iloc[exit_i] / prices["Open"].iloc[entry_i] - 1
+        trades.append({
+            "Date": d, "entry_i": entry_i, "exit_i": exit_i,
+            "gross": gross, "net": gross - ENTRY_COST - EXIT_COST,
+        })
+        last_exit_i = exit_i
+    return pd.DataFrame(trades)
 
-## Backtest (net of costs)
-Entry at next day's open, exit at the close N days after the event day,
-one position at a time, 10 bps per side, cash earns 0% while flat.
-- 101 trades per holding period. 10d: +0.81% mean net (median +1.05%,
-  std 5.7%), win rate 55.4%. 5d: +0.44%. 3d: +0.39%. 1d: +0.09% with a
-  negative median, so no edge.
-- Out-of-sample (n=17): 10d +2.02% mean, 76% win rate. Small sample from
-  one market regime, treated as encouraging, not confirming.
-- Equity curve (daily mark-to-market), 10d hold: +91% total (3.5% CAGR),
-  max drawdown -46%, in the market 22% of days. Buy and hold over the
-  same period: +416% (9.0% CAGR), max drawdown -60%. The event strategy
-  earns far less than holding NIFTY and still suffers a deep drawdown,
-  so it is not an attractive standalone strategy.
 
-## Robustness
-Thresholds -1.5% to -3.0%, holds 1 to 20 days (20 combinations):
-- 10 and 20 day holds are positive in most cases; the effect grows with
-  deeper falls but trade counts shrink (31 trades at -3%/20d).
-- 1 to 5 day holds are mostly negative or near zero after costs.
-- Results are sensitive to how overlapping events are filtered
-  (-2%/5d is +0.44% in the main backtest, -0.18% in robustness).
-- Testing 20 combinations creates data-mining risk; no single best
-  cell is claimed as the finding.
+def summarize(trades, label, n):
+    if trades.empty:
+        return {"holding_days": n, "sample": label, "n_trades": 0}
+    r = trades["net"]
+    return {
+        "holding_days": n,
+        "sample": label,
+        "n_trades": len(r),
+        "mean_net_%": r.mean() * 100,
+        "median_net_%": r.median() * 100,
+        "std_net_%": r.std() * 100,
+        "win_rate_%": (r > 0).mean() * 100,
+        "best_%": r.max() * 100,
+        "worst_%": r.min() * 100,
+    }
 
-## Risk
-Worst single trades: -21% (10d) and -29% (20d) at the -2% threshold;
--35% at -1.5%/20d. The worst 10-day outcomes cluster in the 2008
-financial crisis (events on 2008-01-15, 2008-02-20, 2008-09-23,
-2008-10-10, with 10-day forward returns of roughly -7% to -23%) and in
-the pre-COVID fall of 2020-02-24 (about -12%). Buying falls fails badly
-when the fall is the start of a crash.
 
-## Challenging the Result
-What would make me reject the hypothesis:
-- A larger or later sample where the event-minus-baseline difference
-  stays indistinguishable from zero (already true here: p = 0.115 to
-  0.298) or turns negative.
-- Out-of-sample means falling to zero or below as more post-2021 events
-  accumulate (only 17 so far).
-- Higher costs: the 10d edge disappears at about 100 bps round trip
-  (+0.81% net at 20 bps). Slippage in a crash could approach this.
-- Results that flip under a reasonable change of overlap rule (already
-  seen: -2%/5d is +0.44% vs -0.18%).
+def build_equity(prices, trades):
+    """Daily mark-to-market returns while in a trade; 0% while flat."""
+    opens, closes = prices["Open"], prices["Close"]
+    daily = pd.Series(0.0, index=prices.index)
+    in_pos = pd.Series(False, index=prices.index)
+    for _, t in trades.iterrows():
+        e, x = int(t["entry_i"]), int(t["exit_i"])
+        for k in range(e, x + 1):
+            base = opens.iloc[e] if k == e else closes.iloc[k - 1]
+            r = closes.iloc[k] / base - 1
+            if k == e:
+                r -= ENTRY_COST
+            if k == x:
+                r -= EXIT_COST
+            daily.iloc[k] = r
+            in_pos.iloc[k] = True
+    equity = (1 + daily).cumprod()
+    return equity, in_pos
 
-Risks checked:
-- Look-ahead bias: entry is the next open. Parameters (-2%, holds of
-  1/3/5/10 days, the 2021-01-01 split) were fixed before results were seen.
-- Out-of-sample purity: the robustness table prints out-of-sample means
-  for every setting, so that period was viewed, though not used to
-  choose parameters.
-- Overlapping events, regimes (2008, 2020), sample size (101 overall,
-  17 out-of-sample) and data quality are discussed above.
 
-Statistical vs economic significance: no test is significant at 95%, and
-economically the 10d strategy earns less than buy and hold (3.5% vs 9.0%
-CAGR) with a -46% drawdown, so even a real drift would not make this a
-worthwhile standalone strategy.
+def curve_stats(equity, years):
+    dd = equity / equity.cummax() - 1
+    return {
+        "total_return_%": (equity.iloc[-1] - 1) * 100,
+        "cagr_%": (equity.iloc[-1] ** (1 / years) - 1) * 100,
+        "max_drawdown_%": dd.min() * 100,
+    }
 
-## Conclusion
-Hypothesis: NIFTY recovers after big one-day falls. Method: -2% events,
-next-open entry, bootstrap vs baseline, cost-adjusted backtest,
-robustness sweep, out-of-sample split. Evidence: a modest positive drift
-over 10 to 20 trading days, not statistically proven. Baseline: only
-modestly above normal days. Robustness: fragile to overlap rules,
-weaker at short holds. Out-of-sample: persisted but on just 17 events.
-Verdict: not a validated trading strategy.
 
-## Limitations
-Single index and event type; regime effects; assumed costs; small
-out-of-sample sample; no position sizing or stop-loss; 20 tested
-parameter combinations.
+def run_backtest():
+    prices = load_clean_data()
+    if "Date" in prices.columns:
+        prices = prices.set_index("Date")
+    prices.index = pd.to_datetime(prices.index)
+
+    ev = pd.read_csv(EVENTS_PATH)
+    event_dates = list(pd.to_datetime(ev["Date"]))
+    split = pd.to_datetime(OOS_SPLIT_DATE)
+    years = (prices.index[-1] - prices.index[0]).days / 365.25
+
+    # Buy-and-hold benchmark over the same period
+    bh_equity = (1 + prices["Close"].pct_change().fillna(0)).cumprod()
+    bh = curve_stats(bh_equity, years)
+
+    trade_rows, equity_rows, curves = [], [], {}
+    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
+
+    for n in HOLDING_PERIODS:
+        t = run_trades(prices, event_dates, n)
+        trade_rows.append(summarize(t, "all", n))
+        trade_rows.append(summarize(t[t["Date"] < split], "in-sample", n))
+        trade_rows.append(summarize(t[t["Date"] >= split], "out-of-sample", n))
+
+        equity, in_pos = build_equity(prices, t)
+        curves[n] = equity
+        stats = curve_stats(equity, years)
+        equity_rows.append({
+            "strategy": f"events, hold {n}d",
+            "n_trades": len(t),
+            "time_in_market_%": in_pos.mean() * 100,
+            **stats,
+        })
+        pd.DataFrame({
+            "Date": prices.index,
+            "equity": equity.values,
+            "buy_hold_equity": bh_equity.values,
+            "drawdown_%": ((equity / equity.cummax() - 1) * 100).values,
+        }).to_csv(CURVE_PATH.format(n=n), index=False)
+
+    equity_rows.append({
+        "strategy": "buy and hold NIFTY",
+        "n_trades": 1,
+        "time_in_market_%": 100.0,
+        **bh,
+    })
+
+    trade_out = pd.DataFrame(trade_rows).round(3)
+    equity_out = pd.DataFrame(equity_rows).round(3)
+    trade_out.to_csv(OUT_PATH, index=False)
+    equity_out.to_csv(EQUITY_SUMMARY_PATH, index=False)
+
+    print("\n=== Backtest trades (net of costs) ===")
+    print(trade_out.to_string(index=False))
+    print("\n=== Equity curve summary (daily mark-to-market, cash = 0%) ===")
+    print(equity_out.to_string(index=False))
+    print(f"\nSaved to {OUT_PATH} and {EQUITY_SUMMARY_PATH}")
+
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        os.makedirs(os.path.dirname(FIG_PATH), exist_ok=True)
+        fig, ax = plt.subplots(figsize=(10, 5))
+        for n, eq in curves.items():
+            ax.plot(eq.index, eq.values, label=f"events, hold {n}d")
+        ax.plot(bh_equity.index, bh_equity.values, "k--", label="buy and hold")
+        ax.set_yscale("log")
+        ax.set_title("Equity curves (net of costs, log scale)")
+        ax.legend()
+        fig.savefig(FIG_PATH, dpi=150, bbox_inches="tight")
+        print(f"Saved chart to {FIG_PATH}")
+    except ImportError:
+        print("matplotlib not installed, skipped chart.")
+
+
+if __name__ == "__main__":
+    run_backtest()
