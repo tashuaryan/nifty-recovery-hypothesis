@@ -1,116 +1,19 @@
-# Do NIFTY 50 returns recover after significant one-day falls?
+REASEARCH NOTE
+Hypothesis- "After a significant one-day fall in NIFTY, the market tends to recover over the next few trading days."
+So the hypothesis says a significant fall without any number so when i was assuming the number i kept this in mind that the number can't be too small like 0.05% because it is not that significant and it is common in the regular market so i choose 2% which makes it a significant dip in the market.
 
-## Hypothesis
-After a large one-day fall in the NIFTY 50, forward returns over the next
-few days to weeks are higher than on normal days.
+Data - i extracted the data using python in vs code, I downloded roughly about 19 years of data (daily trading data) spanning from september 2207 to september 2026 (4,664 trading days).
+I validated the dataset to confirm that the data is not missing dates or that none  of the data is corrupted.
+And after research i got the result that the mark which i choose 2% had several dip around 200 times and after filtering the data , removing incorrect or overlapping event the number was 101 .
+So if there is a dip of 2% in the market and buying the share that day is quite uncommon occurrence because it can either be luck or prior knowledge.
+So I assume the buying of the share next day. eg: if the 2% dip happened on monday so i bought the share on tuesday morning at that price.
+Cost- deduction of 0.20% on every round trip trade to account for brokerage, government taxes and real world friction.
+Returns-1 day : average return was nearly zero (+0.09%).
+        3 day : average return was +0.39%.
+        5 day : average return was +0.44%.
+        10 day: average return was +0.81%
 
-## Data
-NIFTY 50 (^NSEI) daily OHLC from Yahoo Finance via yfinance, 2007-09-18 to
-2026-09-23 (4,664 rows). Validated: no duplicates, correctly ordered, no
-missing values, no invalid OHLC or non-positive prices.
-
-## Event and Recovery Definitions
-Event: close-to-close return <= -2%. 200 days qualified; 101 remained
-after skipping events that overlap the holding window of an earlier event
-(no double counting). Recovery: cumulative return from entry to the close
-N trading days later, for N = 1, 3, 5, 10 (and 20 in robustness).
-
-## Entry / Exit, Holding Period, Test Period
-Entry: next trading day's open (the fall is only known at the close, so
-this avoids look-ahead bias). Exit: close N days after the event day.
-Full sample 2007-09-18 to 2026-09-23. In-sample: before 2021-01-01
-(84 events). Out-of-sample: 2021-01-01 onwards (17 events).
-
-## Transaction Costs
-10 bps per side (20 bps round trip), an assumed approximation of brokerage
-and market impact, not exchange-specific fee data.
-
-## Statistical Evidence
-Event forward returns vs all non-event days, bootstrap (10,000 resamples)
-on the difference in means:
-- Mean event return: +0.26% (1d), +0.58% (3d), +0.83% (5d), +1.14% (10d)
-- Baseline: -0.00%, +0.08%, +0.15%, +0.35%
-- Differences are positive at every horizon, but no 95% interval excludes
-  zero (p = 0.115 to 0.298). Win rates are close to baseline
-  (10d: 57.4% vs 56.3%).
-- Volatility: event-window returns are about 50% more dispersed than
-  normal days (std 2.6%, 3.9%, 4.3%, 6.1% vs 1.6%, 2.4%, 2.9%, 4.0% for
-  1, 3, 5, 10 days). Falls cluster in turbulent markets, so the higher
-  average comes with a much wider range of outcomes.
-Why these statistics: the mean and median show the size and typical
-outcome, the win rate shows consistency, the standard deviation shows
-risk, and the bootstrap gives a confidence interval without assuming
-normal returns.
-Conclusion: suggestive, not statistically significant with 101 events.
-
-## Backtest (net of costs)
-Entry at next day's open, exit at the close N days after the event day,
-one position at a time, 10 bps per side, cash earns 0% while flat.
-- 101 trades per holding period. 10d: +0.81% mean net (median +1.05%,
-  std 5.7%), win rate 55.4%. 5d: +0.44%. 3d: +0.39%. 1d: +0.09% with a
-  negative median, so no edge.
-- Out-of-sample (n=17): 10d +2.02% mean, 76% win rate. Small sample from
-  one market regime, treated as encouraging, not confirming.
-- Equity curve (daily mark-to-market), 10d hold: +91% total (3.5% CAGR),
-  max drawdown -46%, in the market 22% of days. Buy and hold over the
-  same period: +416% (9.0% CAGR), max drawdown -60%. The event strategy
-  earns far less than holding NIFTY and still suffers a deep drawdown,
-  so it is not an attractive standalone strategy.
-
-## Robustness
-Thresholds -1.5% to -3.0%, holds 1 to 20 days (20 combinations):
-- 10 and 20 day holds are positive in most cases; the effect grows with
-  deeper falls but trade counts shrink (31 trades at -3%/20d).
-- 1 to 5 day holds are mostly negative or near zero after costs.
-- Results are sensitive to how overlapping events are filtered
-  (-2%/5d is +0.44% in the main backtest, -0.18% in robustness).
-- Testing 20 combinations creates data-mining risk; no single best
-  cell is claimed as the finding.
-
-## Risk
-Worst single trades: -21% (10d) and -29% (20d) at the -2% threshold;
--35% at -1.5%/20d. The worst 10-day outcomes cluster in the 2008
-financial crisis (events on 2008-01-15, 2008-02-20, 2008-09-23,
-2008-10-10, with 10-day forward returns of roughly -7% to -23%) and in
-the pre-COVID fall of 2020-02-24 (about -12%). Buying falls fails badly
-when the fall is the start of a crash.
-
-## Challenging the Result
-What would make me reject the hypothesis:
-- A larger or later sample where the event-minus-baseline difference
-  stays indistinguishable from zero (already true here: p = 0.115 to
-  0.298) or turns negative.
-- Out-of-sample means falling to zero or below as more post-2021 events
-  accumulate (only 17 so far).
-- Higher costs: the 10d edge disappears at about 100 bps round trip
-  (+0.81% net at 20 bps). Slippage in a crash could approach this.
-- Results that flip under a reasonable change of overlap rule (already
-  seen: -2%/5d is +0.44% vs -0.18%).
-
-Risks checked:
-- Look-ahead bias: entry is the next open. Parameters (-2%, holds of
-  1/3/5/10 days, the 2021-01-01 split) were fixed before results were seen.
-- Out-of-sample purity: the robustness table prints out-of-sample means
-  for every setting, so that period was viewed, though not used to
-  choose parameters.
-- Overlapping events, regimes (2008, 2020), sample size (101 overall,
-  17 out-of-sample) and data quality are discussed above.
-
-Statistical vs economic significance: no test is significant at 95%, and
-economically the 10d strategy earns less than buy and hold (3.5% vs 9.0%
-CAGR) with a -46% drawdown, so even a real drift would not make this a
-worthwhile standalone strategy.
-
-## Conclusion
-Hypothesis: NIFTY recovers after big one-day falls. Method: -2% events,
-next-open entry, bootstrap vs baseline, cost-adjusted backtest,
-robustness sweep, out-of-sample split. Evidence: a modest positive drift
-over 10 to 20 trading days, not statistically proven. Baseline: only
-modestly above normal days. Robustness: fragile to overlap rules,
-weaker at short holds. Out-of-sample: persisted but on just 17 events.
-Verdict: not a validated trading strategy.
-
-## Limitations
-Single index and event type; regime effects; assumed costs; small
-out-of-sample sample; no position sizing or stop-loss; 20 tested
-parameter combinations.
+CONCLUSION:
+Yes, the market does drifts up slightly over 10 days but it is not statistically proven,
+After running the bootstrap test the result was that a result must have a p-value below 0.05 to be considered statistically significant. this means the slight recovery could easily be randon variation.
+It makes far less money than doing nothing, while taking massive risk and the pattern is not exactly full prove truth because the hypothesis will totally fall apart at the time like 2008 crisis or covid crisis.
