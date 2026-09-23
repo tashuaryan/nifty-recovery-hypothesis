@@ -4,7 +4,7 @@ Change values here — never hardcode thresholds/dates inside notebooks or scrip
 """
 
 # --- Date range ---
-START_DATE = "2007-01-01"   # will confirm after checking actual data coverage
+START_DATE = "2007-09-17"   # will confirm after checking actual data coverage
 END_DATE = "2026-09-01"
 
 # --- Event definition ---
